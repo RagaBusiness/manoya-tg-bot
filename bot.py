@@ -125,9 +125,9 @@ async def main():
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
-    # Бесконечный loop для Render (чтобы не выходил)
+    # Бесконечный loop для Render
     while True:
-        await asyncio.sleep(60)  # Sleep to keep running
+        await time.sleep(60)  # Keep alive
 
 if __name__ == '__main__':
     asyncio.run(main())
