@@ -7,7 +7,7 @@ import re
 import stripe
 from fastapi import FastAPI, Request, Response
 import uvicorn
-import logging  # Для логов
+import logging
 
 # Настройка логов
 logging.basicConfig(level=logging.INFO)
@@ -139,10 +139,18 @@ async def root():
     logger.info("Root hit")
     return {"message": "Manoya bot is alive!"}
 
-if __name__ == '__main__':
+async def main():
+    await app.initialize()  # Инициализация здесь!
     if WEBHOOK_URL:
         logger.info(f"Webhook mode: {WEBHOOK_URL}")
     else:
         logger.info("Polling mode")
-        app.run_polling()
+        await app.start()  # Для polling
+        await app.updater.start_polling()
+        await app.updater.stop()
+        await app.stop()
     uvicorn.run("bot:api_app", host="0.0.0.0", port=PORT)
+
+if __name__ == '__main__':
+    import asyncio
+    asyncio.run(main())
