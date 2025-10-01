@@ -122,7 +122,9 @@ conv_handler = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)]
 )
 app.add_handler(conv_handler)
-
+@api_app.get("/")
+async def root():
+    return {"message": "Manoya bot is alive!"}
 @api_app.post("/webhook")
 async def webhook(request: Request):
     update = await app.update_queue.put(await request.json())
