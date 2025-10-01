@@ -5,19 +5,23 @@ import requests
 import time
 import re
 import stripe
+from fastapi import FastAPI, Request, Response
+import uvicorn  # Для сервера
 
 # Загружаем переменные из .env
 load_dotenv()
 TOKEN = os.getenv('TOKEN')
 GROK_API_KEY = os.getenv('GROK_API_KEY')
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
-WEBHOOK_URL = os.getenv('WEBHOOK_URL')  # Добавим в .env позже
+PORT = int(os.getenv('PORT', 8080))
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
 # Настройка Stripe
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
-else:
-    print("Внимание: STRIPE_SECRET_KEY не найден в .env — оплата не сработает.")
+
+# FastAPI для webhook
+api_app = FastAPI()
 
 # Состояния диалога
 BUSINESS, CLARIFY, PAY, CONNECT = range(4)
@@ -82,20 +86,20 @@ async def cancel(update, context):
 
 def analyze_business(description):
     prompt = f"Анализируй: '{description}'. Детали: продукты, аудитория, цены, цели, стратегии, риски."
-    return call_grok_api(prompt, fallback=f"Fallback: Продукты: {re.findall(r'(продукт|услуга).*?([а-яa-z]+)', description, re.I)[:3]} | Аудитория: {re.findall(r'(аудитори|клиент).*?([а-яa-z\s]+)', description, re.I)[:2]} | Цены: {re.findall(r'(\d+).*?(руб|фунт)', description)[:2]} | Цели: рост продаж.")
+    return call_grok_api(prompt)
 
 def generate_questions(description):
     prompt = f"На основе '{description}', задай 1-3 вопроса (продукты, цены, аудитория)."
-    return call_grok_api(prompt, fallback="1. Какие продукты? 2. Кто аудитория? 3. Какие цены?")
+    return call_grok_api(prompt)
 
-def call_grok_api(prompt, fallback="Ошибка API. Попробуй позже."):
+def call_grok_api(prompt):
     url = "https://api.x.ai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {GROK_API_KEY}", "Content-Type": "application/json"}
     data = {"model": "grok-3", "messages": [{"role": "user", "content": prompt}], "temperature": 0.7}
     backoff = 2
     for attempt in range(3):
         try:
-            response = requests.post(url, headers=headers, json=data, timeout=60, verify=True)
+            response = requests.post(url, headers=headers, json=data, timeout=60)
             response.raise_for_status()
             return response.json()['choices'][0]['message']['content']
         except Exception as e:
@@ -103,25 +107,26 @@ def call_grok_api(prompt, fallback="Ошибка API. Попробуй позж�
                 time.sleep(backoff)
                 backoff *= 2
                 continue
-            return fallback.format(error=str(e))
+            return f"Ошибка API (попытка {attempt+1}): {str(e)}. Проверь кредиты/ключ."
 
-def main():
-    app = Application.builder().token(TOKEN).build()
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            BUSINESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_business)],
-            CLARIFY: [MessageHandler(filters.TEXT & ~filters.COMMAND, clarify)],
-            PAY: [CommandHandler("pay", pay)],
-            CONNECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_connect_token)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel)]
-    )
-    if WEBHOOK_URL:
-        app.run_webhook(webhook_url=WEBHOOK_URL, webhook_secret_token="YOUR_SECRET_TOKEN")
-    else:
-        print("WEBHOOK_URL не задан. Используется polling.")
-        app.run_polling()
+# Webhook setup
+app = Application.builder().token(TOKEN).build()
+conv_handler = ConversationHandler(
+    entry_points=[CommandHandler("start", start)],
+    states={
+        BUSINESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_business)],
+        CLARIFY: [MessageHandler(filters.TEXT & ~filters.COMMAND, clarify)],
+        PAY: [CommandHandler("pay", pay)],
+        CONNECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_connect_token)]
+    },
+    fallbacks=[CommandHandler("cancel", cancel)]
+)
+app.add_handler(conv_handler)
+
+@api_app.post("/webhook")
+async def webhook(request: Request):
+    update = await app.update_queue.put(await request.json())
+    return Response(status_code=200)
 
 if __name__ == '__main__':
-    main()
+    uvicorn.run("bot:api_app", host="0.0.0.0", port=PORT)
