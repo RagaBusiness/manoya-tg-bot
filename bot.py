@@ -22,6 +22,8 @@ STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
 
+app = Application.builder().token(TOKEN).build()
+
 # Состояния диалога
 BUSINESS, CLARIFY, PAY, CONNECT = range(4)
 
@@ -125,9 +127,9 @@ async def main():
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
-    # Бесконечный loop для Render
+    # Бесконечный loop для Render (чтобы не выходил)
     while True:
-        await time.sleep(60)  # Keep alive
+        await asyncio.sleep(60)  # Keep alive
 
 if __name__ == '__main__':
     asyncio.run(main())
