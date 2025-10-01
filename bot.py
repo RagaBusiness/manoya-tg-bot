@@ -1,3 +1,4 @@
+import asyncio
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
 from dotenv import load_dotenv
 import os
@@ -6,6 +7,7 @@ import time
 import re
 import stripe
 from fastapi import FastAPI, Request, Response
+from contextlib import asynccontextmanager
 import uvicorn
 import logging
 
@@ -30,6 +32,15 @@ api_app = FastAPI()
 
 # Создаём Application
 app = Application.builder().token(TOKEN).build()
+
+# Async startup/shutdown for init
+@asynccontextmanager
+async def lifespan(fastapi_app: FastAPI):
+    await app.initialize()  # Инициализация здесь
+    yield
+    await app.shutdown()  # Cleanup
+
+api_app.lifespan = lifespan
 
 # Состояния диалога
 BUSINESS, CLARIFY, PAY, CONNECT = range(4)
@@ -145,15 +156,5 @@ async def root():
     logger.info("Root hit")
     return {"message": "Manoya bot is alive!"}
 
-def main():
-    if WEBHOOK_URL:
-        logger.info(f"Webhook mode: {WEBHOOK_URL}")
-    else:
-        logger.info("Polling mode")
-        app.run_polling()
-    uvicorn.run("bot:api_app", host="0.0.0.0", port=PORT)
-
 if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(app.initialize())
-    main()
+    uvicorn.run("bot:api_app", host="0.0.0.0", port=PORT)
