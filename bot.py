@@ -28,6 +28,9 @@ if STRIPE_SECRET_KEY:
 # FastAPI для webhook
 api_app = FastAPI()
 
+# Создаём Application
+app = Application.builder().token(TOKEN).build()
+
 # Состояния диалога
 BUSINESS, CLARIFY, PAY, CONNECT = range(4)
 
@@ -114,7 +117,7 @@ def call_grok_api(prompt):
                 continue
             return f"Ошибка API (попытка {attempt+1}): {str(e)}. Проверь кредиты/ключ."
 
-app = Application.builder().token(TOKEN).build()
+# Добавляем handlers
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler("start", start)],
     states={
@@ -131,7 +134,10 @@ app.add_handler(conv_handler)
 async def webhook(request: Request):
     json_data = await request.json()
     logger.info(f"Incoming webhook: {json_data}")
-    await app.process_update(json_data)
+    try:
+        await app.process_update(json_data)
+    except Exception as e:
+        logger.error(f"Error processing update: {str(e)}")
     return Response(status_code=200)
 
 @api_app.get("/")
@@ -139,18 +145,15 @@ async def root():
     logger.info("Root hit")
     return {"message": "Manoya bot is alive!"}
 
-async def main():
-    await app.initialize()  # Инициализация здесь!
+def main():
     if WEBHOOK_URL:
         logger.info(f"Webhook mode: {WEBHOOK_URL}")
     else:
         logger.info("Polling mode")
-        await app.start()  # Для polling
-        await app.updater.start_polling()
-        await app.updater.stop()
-        await app.stop()
+        app.run_polling()
     uvicorn.run("bot:api_app", host="0.0.0.0", port=PORT)
 
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(app.initialize())
+    main()
