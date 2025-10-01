@@ -1,5 +1,6 @@
 import asyncio
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
+from telegram import Update
 from dotenv import load_dotenv
 import os
 import requests
@@ -33,11 +34,13 @@ api_app = FastAPI()
 # Создаём Application
 app = Application.builder().token(TOKEN).build()
 
-# Async lifespan for init
+# Async lifespan for init and start
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
-    await app.initialize()  # Инициализация здесь
+    await app.initialize()  # Инициализация
+    await app.start()  # Старт updater
     yield
+    await app.stop()  # Stop updater
     await app.shutdown()  # Cleanup
 
 api_app.lifespan = lifespan
