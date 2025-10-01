@@ -7,6 +7,7 @@ import time
 import re
 import stripe
 from fastapi import FastAPI, Request, Response
+from contextlib import asynccontextmanager
 import uvicorn
 import logging
 
@@ -28,6 +29,18 @@ if STRIPE_SECRET_KEY:
 
 # FastAPI для webhook
 api_app = FastAPI()
+
+# Создаём Application
+app = Application.builder().token(TOKEN).build()
+
+# Async lifespan for init
+@asynccontextmanager
+async def lifespan(fastapi_app: FastAPI):
+    await app.initialize()  # Инициализация здесь
+    yield
+    await app.shutdown()  # Cleanup
+
+api_app.lifespan = lifespan
 
 # Состояния диалога
 BUSINESS, CLARIFY, PAY, CONNECT = range(4)
@@ -140,13 +153,5 @@ async def root():
     logger.info("Root hit")
     return {"message": "Manoya bot is alive!"}
 
-async def main():
-    if WEBHOOK_URL:
-        logger.info(f"Webhook mode: {WEBHOOK_URL}")
-    else:
-        logger.info("Polling mode")
-        app.run_polling()
-    uvicorn.run("bot:api_app", host="0.0.0.0", port=PORT)
-
 if __name__ == '__main__':
-    asyncio.run(main())
+    uvicorn.run("bot:api_app", host="0.0.0.0", port=PORT)
