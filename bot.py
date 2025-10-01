@@ -1,15 +1,11 @@
 import asyncio
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
-from telegram import Update
 from dotenv import load_dotenv
 import os
 import requests
 import time
 import re
 import stripe
-from fastapi import FastAPI, Request, Response
-from contextlib import asynccontextmanager
-import uvicorn
 import logging
 
 # Настройка логов
@@ -21,29 +17,10 @@ load_dotenv()
 TOKEN = os.getenv('TOKEN')
 GROK_API_KEY = os.getenv('GROK_API_KEY')
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
-PORT = int(os.getenv('PORT', 8080))
-WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
 # Настройка Stripe
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
-
-# FastAPI для webhook
-api_app = FastAPI()
-
-# Создаём Application
-app = Application.builder().token(TOKEN).build()
-
-# Async lifespan for init and start
-@asynccontextmanager
-async def lifespan(fastapi_app: FastAPI):
-    await app.initialize()  # Инициализация
-    await app.start()  # Старт updater
-    yield
-    await app.stop()  # Stop updater
-    await app.shutdown()  # Cleanup
-
-api_app.lifespan = lifespan
 
 # Состояния диалога
 BUSINESS, CLARIFY, PAY, CONNECT = range(4)
@@ -144,17 +121,13 @@ conv_handler = ConversationHandler(
 )
 app.add_handler(conv_handler)
 
-@api_app.post("/webhook")
-async def webhook(request: Request):
-    json_data = await request.json()
-    logger.info(f"Incoming webhook: {json_data}")
-    await app.process_update(json_data)
-    return Response(status_code=200)
-
-@api_app.get("/")
-async def root():
-    logger.info("Root hit")
-    return {"message": "Manoya bot is alive!"}
+async def main():
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    # Бесконечный loop для Render (чтобы не выходил)
+    while True:
+        await asyncio.sleep(60)  # Sleep to keep running
 
 if __name__ == '__main__':
-    uvicorn.run("bot:api_app", host="0.0.0.0", port=PORT)
+    asyncio.run(main())
