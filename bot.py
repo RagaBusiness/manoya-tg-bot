@@ -6,7 +6,12 @@ import time
 import re
 import stripe
 from fastapi import FastAPI, Request, Response
-import uvicorn  # Для сервера
+import uvicorn
+import logging  # Для логов
+
+# Настройка логов
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Загружаем переменные из .env
 load_dotenv()
@@ -109,7 +114,6 @@ def call_grok_api(prompt):
                 continue
             return f"Ошибка API (попытка {attempt+1}): {str(e)}. Проверь кредиты/ключ."
 
-# Webhook setup
 app = Application.builder().token(TOKEN).build()
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler("start", start)],
@@ -122,13 +126,23 @@ conv_handler = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)]
 )
 app.add_handler(conv_handler)
-@api_app.get("/")
-async def root():
-    return {"message": "Manoya bot is alive!"}
+
 @api_app.post("/webhook")
 async def webhook(request: Request):
-    update = await app.update_queue.put(await request.json())
+    json_data = await request.json()
+    logger.info(f"Incoming webhook: {json_data}")
+    await app.process_update(json_data)
     return Response(status_code=200)
 
+@api_app.get("/")
+async def root():
+    logger.info("Root hit")
+    return {"message": "Manoya bot is alive!"}
+
 if __name__ == '__main__':
+    if WEBHOOK_URL:
+        logger.info(f"Webhook mode: {WEBHOOK_URL}")
+    else:
+        logger.info("Polling mode")
+        app.run_polling()
     uvicorn.run("bot:api_app", host="0.0.0.0", port=PORT)
